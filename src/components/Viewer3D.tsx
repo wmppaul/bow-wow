@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Grid, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import type { BoatParams } from '../types/boatParams';
@@ -16,17 +16,53 @@ interface Viewer3DProps {
 }
 
 type ViewMode = 'perspective' | 'orthographic';
-type ViewPreset = 'home' | 'top' | 'bottom' | 'front' | 'right' | 'back' | 'left';
+type ViewPreset = 'home' | 'home2' | 'home3' | 'home4' | 'top' | 'bottom' | 'front' | 'right' | 'back' | 'left';
 
 interface CameraControllerProps {
   viewPreset: ViewPreset;
   target: [number, number, number];
+  viewMode: ViewMode;
 }
 
-function CameraController({ viewPreset, target }: CameraControllerProps) {
+// Store camera state globally so it persists across mode switches
+const cameraState = {
+  position: new THREE.Vector3(150, 100, 150),
+  target: new THREE.Vector3(0, 12.5, 0),
+};
+
+function CameraController({ viewPreset, target, viewMode }: CameraControllerProps) {
   const { camera } = useThree();
   const controlsRef = useRef<any>(null);
   const lastPresetRef = useRef<ViewPreset | null>(null);
+  const lastViewModeRef = useRef<ViewMode | null>(null);
+  const restoreFramesRef = useRef(0);
+
+  // On mode change, flag that we need to restore position for a few frames
+  useEffect(() => {
+    if (lastViewModeRef.current !== null && lastViewModeRef.current !== viewMode) {
+      // Mode changed - need to restore position over next few frames
+      restoreFramesRef.current = 5; // Restore for 5 frames to ensure it sticks
+    }
+    lastViewModeRef.current = viewMode;
+  }, [viewMode]);
+
+  // Use frame loop to restore camera position after mode switch
+  useFrame(() => {
+    if (restoreFramesRef.current > 0) {
+      camera.position.copy(cameraState.position);
+      if (controlsRef.current) {
+        controlsRef.current.target.copy(cameraState.target);
+        controlsRef.current.update();
+      }
+      restoreFramesRef.current--;
+    } else {
+      // Save current state
+      cameraState.position.copy(camera.position);
+      if (controlsRef.current) {
+        cameraState.target.copy(controlsRef.current.target);
+      }
+    }
+  });
 
   // Only update camera position when viewPreset changes, not when target changes
   useEffect(() => {
@@ -39,9 +75,20 @@ function CameraController({ viewPreset, target }: CameraControllerProps) {
     const distance = 200;
     let position: [number, number, number];
 
+    const homeDistance = 180;
+    const homeHeight = 100;
     switch (viewPreset) {
       case 'home':
-        position = [150, 100, 150];
+        position = [homeDistance, homeHeight, homeDistance];
+        break;
+      case 'home2': // 90° rotation
+        position = [homeDistance, homeHeight, -homeDistance];
+        break;
+      case 'home3': // 180° rotation
+        position = [-homeDistance, homeHeight, -homeDistance];
+        break;
+      case 'home4': // 270° rotation
+        position = [-homeDistance, homeHeight, homeDistance];
         break;
       case 'top': // XZ plane (looking down Y)
         position = [0, distance, 0];
@@ -62,11 +109,15 @@ function CameraController({ viewPreset, target }: CameraControllerProps) {
         position = [-distance, target[1], 0];
         break;
       default:
-        position = [150, 100, 150];
+        position = [homeDistance, homeHeight, homeDistance];
     }
 
     camera.position.set(...position);
     camera.lookAt(target[0], target[1], target[2]);
+
+    // Save state
+    cameraState.position.copy(camera.position);
+    cameraState.target.set(target[0], target[1], target[2]);
 
     if (controlsRef.current) {
       controlsRef.current.target.set(...target);
@@ -90,7 +141,8 @@ function Scene({
   waterlineHeight,
   viewMode,
   viewPreset,
-}: Viewer3DProps & { viewMode: ViewMode; viewPreset: ViewPreset }) {
+  fitsOnPlate,
+}: Viewer3DProps & { viewMode: ViewMode; viewPreset: ViewPreset; fitsOnPlate: boolean }) {
   const hullGroupRef = useRef<THREE.Group>(null);
   const target: [number, number, number] = [0, params.hullHeight / 2, 0];
 
@@ -115,7 +167,7 @@ function Scene({
         <OrthographicCamera makeDefault zoom={2} position={[150, 100, 150]} />
       )}
 
-      <CameraController viewPreset={viewPreset} target={target} />
+      <CameraController viewPreset={viewPreset} target={target} viewMode={viewMode} />
 
       <ambientLight intensity={0.4} />
       <directionalLight
@@ -126,7 +178,10 @@ function Scene({
       />
       <directionalLight position={[-50, 50, -50]} intensity={0.3} />
 
-      <BuildPlate size={params.buildPlateSize} />
+      {/* Build plate rotated 45° so boat fits diagonally */}
+      <group rotation={[0, Math.PI / 4, 0]}>
+        <BuildPlate size={params.buildPlateSize} fitsOnPlate={fitsOnPlate} />
+      </group>
 
       <Grid
         args={[300, 300]}
@@ -140,7 +195,9 @@ function Scene({
         position={[0, -0.1, 0]}
       />
 
-      <group ref={hullGroupRef}>
+      {/* Hull - shifted to optimally fit on 45° rotated plate */}
+      {/* Wide stern needs to be closer to plate center, narrow bow can extend to plate tip */}
+      <group ref={hullGroupRef} position={[0, 0, params.beam / 4]}>
         <HullMesh params={params} calculatedLength={calculatedLength} />
       </group>
 
@@ -155,7 +212,10 @@ function Scene({
 
 // Toggle pairs for view presets
 const viewTogglePairs: Record<ViewPreset, ViewPreset> = {
-  home: 'home',
+  home: 'home2',
+  home2: 'home3',
+  home3: 'home4',
+  home4: 'home',
   top: 'bottom',
   bottom: 'top',
   front: 'back',
@@ -164,13 +224,29 @@ const viewTogglePairs: Record<ViewPreset, ViewPreset> = {
   left: 'right',
 };
 
+// Check if a preset is a home variant
+const isHomePreset = (preset: ViewPreset) =>
+  preset === 'home' || preset === 'home2' || preset === 'home3' || preset === 'home4';
+
 export function Viewer3D({ params, calculatedLength, waterlineHeight }: Viewer3DProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('perspective');
   const [viewPreset, setViewPreset] = useState<ViewPreset>('home');
 
-  // Handle view preset toggle - if clicking same view, switch to opposite
+  // Check if boat fits on build plate (45° rotated plate with optimal positioning)
+  // With boat shifted by beam/4 toward bow, the constraint is: length ≤ plateSize*√2 - beam/2
+  const maxFitLength = params.buildPlateSize * Math.SQRT2 - params.beam / 2;
+  const fitsOnPlate = calculatedLength <= maxFitLength;
+
+  // Handle view preset toggle - if clicking same view, switch to opposite/next
   const handleViewPreset = (preset: ViewPreset) => {
-    if (viewPreset === preset) {
+    // For home button, always cycle to next home position
+    if (preset === 'home') {
+      if (isHomePreset(viewPreset)) {
+        setViewPreset(viewTogglePairs[viewPreset]);
+      } else {
+        setViewPreset('home');
+      }
+    } else if (viewPreset === preset) {
       setViewPreset(viewTogglePairs[preset]);
     } else {
       setViewPreset(preset);
@@ -191,7 +267,7 @@ export function Viewer3D({ params, calculatedLength, waterlineHeight }: Viewer3D
           setViewMode('orthographic');
           break;
         case 'h':
-          setViewPreset('home');
+          handleViewPreset('home');
           break;
         case 't':
           setViewPreset('top');
@@ -238,9 +314,9 @@ export function Viewer3D({ params, calculatedLength, waterlineHeight }: Viewer3D
         </div>
         <div className={styles.controlGroup}>
           <button
-            className={`${styles.viewBtn} ${viewPreset === 'home' ? styles.active : ''}`}
+            className={`${styles.viewBtn} ${isHomePreset(viewPreset) ? styles.active : ''}`}
             onClick={() => handleViewPreset('home')}
-            title="Home (H)"
+            title="Home - rotate 90° each click (H)"
           >
             Home
           </button>
@@ -275,6 +351,7 @@ export function Viewer3D({ params, calculatedLength, waterlineHeight }: Viewer3D
           waterlineHeight={waterlineHeight}
           viewMode={viewMode}
           viewPreset={viewPreset}
+          fitsOnPlate={fitsOnPlate}
         />
       </Canvas>
     </div>

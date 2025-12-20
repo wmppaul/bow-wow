@@ -2,9 +2,10 @@ interface WaterlinePlaneProps {
   waterlineHeight: number;
   length: number;
   beam: number;
+  rotation?: number; // Y-axis rotation in radians
 }
 
-export function WaterlinePlane({ waterlineHeight, length, beam }: WaterlinePlaneProps) {
+export function WaterlinePlane({ waterlineHeight, length, beam, rotation = 0 }: WaterlinePlaneProps) {
   // Only show if waterline is above 0
   if (waterlineHeight <= 0) return null;
 
@@ -13,7 +14,7 @@ export function WaterlinePlane({ waterlineHeight, length, beam }: WaterlinePlane
   return (
     <mesh
       position={[0, waterlineHeight, 0]}
-      rotation={[-Math.PI / 2, 0, 0]}
+      rotation={[-Math.PI / 2, rotation, 0]}
     >
       <planeGeometry args={[planeSize, planeSize]} />
       <meshStandardMaterial

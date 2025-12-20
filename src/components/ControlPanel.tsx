@@ -107,6 +107,13 @@ export function ControlPanel({
       <div className={styles.section}>
         <h2 className={styles.sectionTitle}>Hull Dimensions</h2>
         <SliderRow
+          label="Boat Length"
+          value={params.boatLength}
+          min={50}
+          max={Math.round(maxLength * 1.2)}
+          onChange={(v) => update('boatLength', v)}
+        />
+        <SliderRow
           label="Beam (Width)"
           value={params.beam}
           min={20}

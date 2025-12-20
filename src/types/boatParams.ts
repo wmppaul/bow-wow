@@ -9,6 +9,7 @@ export interface BoatParams {
   buildPlateSize: number; // mm, square plate
 
   // Hull dimensions
+  boatLength: number; // overall length in mm
   beam: number; // width in mm
   hullHeight: number; // total height in mm
   wallThickness: number; // mm
@@ -41,6 +42,7 @@ export const DEFAULT_PARAMS: BoatParams = {
   buildPlateSize: 140,
 
   // Hull dimensions
+  boatLength: 150,
   beam: 40,
   hullHeight: 25,
   wallThickness: 1.2,
@@ -67,17 +69,14 @@ export const DEFAULT_PARAMS: BoatParams = {
   ballastWeight: 0,
 };
 
-// Calculate max length based on build plate and beam (diagonal fit)
+// Calculate max length based on build plate and beam (diagonal fit with optimal positioning)
 export function calculateMaxLength(buildPlateSize: number, beam: number): number {
-  // Boat fits diagonally: length² + beam² = (buildPlate * sqrt(2))²
-  // Actually, for a square plate, max diagonal is plate * sqrt(2)
-  // But we need length² + beam² <= (plate)² for the boat to fit diagonally
-  // Wait, if it's diagonal: we need sqrt(length² + beam²) <= plate * sqrt(2)
-  // So length² + beam² <= 2 * plate²
-  // length <= sqrt(2 * plate² - beam²)
-  const maxLengthSquared = 2 * buildPlateSize * buildPlateSize - beam * beam;
-  if (maxLengthSquared <= 0) return 0;
-  return Math.sqrt(maxLengthSquared);
+  // With optimal positioning (boat shifted by beam/4 toward bow on 45° rotated plate):
+  // - Wide stern is closer to plate center where there's more horizontal space
+  // - Narrow bow extends toward plate tip
+  // Constraint: length ≤ plateSize * √2 - beam/2
+  const maxLength = buildPlateSize * Math.SQRT2 - beam / 2;
+  return Math.max(0, maxLength);
 }
 
 // PLA density in g/cm³

@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { BoatParams } from './types/boatParams';
-import { DEFAULT_PARAMS, calculateMaxLength } from './types/boatParams';
+import { DEFAULT_PARAMS } from './types/boatParams';
 import { ControlPanel } from './components/ControlPanel';
 import { Viewer3D } from './components/Viewer3D';
 import { calculateWaterlineHeight } from './utils/physics';
@@ -11,8 +11,7 @@ function App() {
   const [params, setParams] = useState<BoatParams>(DEFAULT_PARAMS);
 
   // Calculate derived values
-  const maxLength = calculateMaxLength(params.buildPlateSize, params.beam);
-  const calculatedLength = Math.min(maxLength, maxLength * 0.95); // Use 95% of max to leave margin
+  const calculatedLength = params.boatLength;
   const waterlineHeight = calculateWaterlineHeight(params, calculatedLength);
 
   const handleParamsChange = useCallback((newParams: BoatParams) => {
