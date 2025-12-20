@@ -1,73 +1,135 @@
-# React + TypeScript + Vite
+# Bow-Wow: 3D Boat Hull Designer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A web-based tool for designing 3D-printable boat hulls. Adjust parameters with sliders, preview in real-time 3D, and export STL files for printing.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Parametric hull design (length, beam, height, wall thickness)
+- Multiple bow types: Plumb, Raked, Deep V
+- Bilge radius control for rounded hull corners
+- Motor mount configuration
+- Build plate fit visualization (diagonal placement on square plate)
+- Waterline calculation based on weight inputs
+- STL export for 3D printing
+- Save/load designs as JSON
 
-## React Compiler
+## Quick Start
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Prerequisites
 
-## Expanding the ESLint configuration
+- [Node.js](https://nodejs.org/) v18 or later
+  - **Mac**: `brew install node` (if you have Homebrew) or download from nodejs.org
+  - **Windows**: Download installer from nodejs.org and run it
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Installation & Running
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+```bash
+# Clone the repository
+git clone https://github.com/YOUR_USERNAME/bow-wow.git
+cd bow-wow
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+# Install dependencies
+npm install
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Start development server
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Open http://localhost:5173 in your browser.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Hosting on GitHub Pages (Free)
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+You can deploy this to GitHub Pages so anyone can use it without installing anything:
+
+### Setup Steps
+
+1. **Update `vite.config.ts`** - Add base path for your repo:
+
+```typescript
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  base: '/bow-wow/',  // Replace 'bow-wow' with your repo name
+  plugins: [react()],
+})
 ```
+
+2. **Create `.github/workflows/deploy.yml`**:
+
+```yaml
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install and Build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+```
+
+3. **Enable GitHub Pages**:
+   - Go to your repo on GitHub
+   - Settings > Pages
+   - Under "Source", select "GitHub Actions"
+
+4. **Push your changes** - The site will deploy automatically to `https://YOUR_USERNAME.github.io/bow-wow/`
+
+### Alternative Hosting
+
+- **Netlify**: Connect GitHub repo, build command `npm run build`, publish directory `dist`
+- **Vercel**: Import from GitHub, auto-detects Vite
+- **Any static host**: Upload the `dist/` folder after running `npm run build`
+
+## Usage
+
+### Camera Controls
+- **Drag**: Rotate view
+- **Scroll**: Zoom in/out
+- **Keyboard**: P (perspective), O (orthographic), H (home), T (top), F (front), R (right)
+
+### Build Plate Indicator
+- **Green**: Hull fits on build plate (positioned diagonally)
+- **Red**: Hull exceeds build plate size
+
+### Workflow
+1. Adjust hull parameters using sliders
+2. Check that build plate shows green (or intentionally exceed if splitting)
+3. Click "Export STL" to download
+4. Import STL into your slicer (PrusaSlicer, Cura, etc.)
+
+## Tech Stack
+
+- React + TypeScript
+- Three.js via React Three Fiber
+- Vite

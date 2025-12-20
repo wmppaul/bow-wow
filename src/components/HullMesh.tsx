@@ -461,7 +461,8 @@ function createSternCapGeometry(params: BoatParams, sternLength: number, bowLeng
 
   // Position: the extrusion goes in +Z direction from the XY plane
   // We want the back face at the centered stern position
-  geometry.translate(0, 0, -sternLength - hullCenterZ);
+  // Offset backward to avoid z-fighting with hull rim closure faces
+  geometry.translate(0, 0, -sternLength - hullCenterZ - 1.0);
 
   return geometry;
 }

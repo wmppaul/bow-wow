@@ -42,3 +42,7 @@ The hull supports three bow types:
 - **Plumb**: Standard vertical bow that tapers to a point
 - **Raked**: Bow leans forward as it goes up, controlled by `bowRakeAngle`
 - **Deep V**: Sharp V-shaped entry below waterline, controlled by `bowEntryAngle`
+
+## Known Issues / Potential Improvements
+
+1. **Stern z-fighting** - The hull geometry and stern cap are separate meshes that overlap slightly, causing visual flickering (z-fighting) at the stern, especially at the top corners. Currently mitigated with a 1mm offset, but a cleaner fix would be to either integrate the stern cap into the hull geometry with shared vertices, or use a CSG boolean union (e.g., `three-bvh-csg` library). Does not affect 3D printing since slicers handle overlapping geometry.
