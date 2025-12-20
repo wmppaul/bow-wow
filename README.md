@@ -2,6 +2,8 @@
 
 A web-based tool for designing 3D-printable boat hulls. Adjust parameters with sliders, preview in real-time 3D, and export STL files for printing.
 
+**Live Demo:** https://wmppaul.github.io/bow-wow/
+
 ## Features
 
 - Parametric hull design (length, beam, height, wall thickness)
