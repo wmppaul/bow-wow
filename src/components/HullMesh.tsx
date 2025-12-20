@@ -265,6 +265,80 @@ function createHullGeometry(
 
   }
 
+  // Stern end closure (close the entire rim at z = stern position)
+  // This connects outer to inner surfaces all around the U-shaped cross-section
+  const sternSection = 0;
+  const sternIo = IDX.innerOffset;
+
+  // Close left wall (from left bilge end up to top-left)
+  // Faces should point backward (toward -Z)
+  indices.push(
+    sternSection + IDX.leftBilgeEnd,
+    sternSection + sternIo + IDX.topLeft,
+    sternSection + IDX.topLeft
+  );
+  indices.push(
+    sternSection + IDX.leftBilgeEnd,
+    sternSection + sternIo + IDX.leftBilgeEnd,
+    sternSection + sternIo + IDX.topLeft
+  );
+
+  // Close left bilge curve at stern
+  for (let i = 0; i < BILGE_SEGMENTS - 1; i++) {
+    const outerCurr = sternSection + IDX.leftBilgeStart + i;
+    const outerNext = sternSection + IDX.leftBilgeStart + i + 1;
+    const innerCurr = sternSection + sternIo + IDX.leftBilgeStart + i;
+    const innerNext = sternSection + sternIo + IDX.leftBilgeStart + i + 1;
+    indices.push(outerCurr, innerNext, outerNext);
+    indices.push(outerCurr, innerCurr, innerNext);
+  }
+
+  // Close bottom left (from bottom center to left bilge start)
+  indices.push(
+    sternSection + IDX.bottomCenter,
+    sternSection + sternIo + IDX.leftBilgeStart,
+    sternSection + IDX.leftBilgeStart
+  );
+  indices.push(
+    sternSection + IDX.bottomCenter,
+    sternSection + sternIo + IDX.bottomCenter,
+    sternSection + sternIo + IDX.leftBilgeStart
+  );
+
+  // Close bottom right (from right bilge end to bottom center close)
+  indices.push(
+    sternSection + IDX.rightBilgeEnd,
+    sternSection + sternIo + IDX.bottomCenterClose,
+    sternSection + IDX.bottomCenterClose
+  );
+  indices.push(
+    sternSection + IDX.rightBilgeEnd,
+    sternSection + sternIo + IDX.rightBilgeEnd,
+    sternSection + sternIo + IDX.bottomCenterClose
+  );
+
+  // Close right bilge curve at stern
+  for (let i = 0; i < BILGE_SEGMENTS - 1; i++) {
+    const outerCurr = sternSection + IDX.rightBilgeStart + i;
+    const outerNext = sternSection + IDX.rightBilgeStart + i + 1;
+    const innerCurr = sternSection + sternIo + IDX.rightBilgeStart + i;
+    const innerNext = sternSection + sternIo + IDX.rightBilgeStart + i + 1;
+    indices.push(outerCurr, outerNext, innerNext);
+    indices.push(outerCurr, innerNext, innerCurr);
+  }
+
+  // Close right wall (from top-right down to right bilge start)
+  indices.push(
+    sternSection + IDX.topRight,
+    sternSection + sternIo + IDX.topRight,
+    sternSection + IDX.rightBilgeStart
+  );
+  indices.push(
+    sternSection + sternIo + IDX.topRight,
+    sternSection + sternIo + IDX.rightBilgeStart,
+    sternSection + IDX.rightBilgeStart
+  );
+
   // Bow tip closure
   const lastFullSection = (numSections - 2) * POINTS_PER_SECTION;
   const tipSection = (numSections - 1) * POINTS_PER_SECTION;
@@ -296,6 +370,9 @@ function createHullGeometry(
       // Connect outer topRight to inner topRight via tips
       indices.push(lastFullSection + IDX.topRight, tipSection + 0, tipSection + io);
       indices.push(lastFullSection + IDX.topRight, tipSection + io, lastFullSection + io + IDX.topRight);
+      // Also create wall from topRight to rightBilgeStart (don't skip it!)
+      indices.push(lastFullSection + IDX.rightBilgeStart, lastFullSection + IDX.topRight, lastFullSection + io + IDX.topRight);
+      indices.push(lastFullSection + IDX.rightBilgeStart, lastFullSection + io + IDX.topRight, lastFullSection + io + IDX.rightBilgeStart);
       continue;
     }
 
