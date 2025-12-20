@@ -142,7 +142,8 @@ function Scene({
   viewMode,
   viewPreset,
   fitsOnPlate,
-}: Viewer3DProps & { viewMode: ViewMode; viewPreset: ViewPreset; fitsOnPlate: boolean }) {
+  rakeExtension,
+}: Viewer3DProps & { viewMode: ViewMode; viewPreset: ViewPreset; fitsOnPlate: boolean; rakeExtension: number }) {
   const hullGroupRef = useRef<THREE.Group>(null);
   const target: [number, number, number] = [0, params.hullHeight / 2, 0];
 
@@ -197,7 +198,8 @@ function Scene({
 
       {/* Hull - shifted to optimally fit on 45° rotated plate */}
       {/* Wide stern needs to be closer to plate center, narrow bow can extend to plate tip */}
-      <group ref={hullGroupRef} position={[0, 0, params.beam / 4]}>
+      {/* For raked bow, reduce shift to account for rake extension */}
+      <group ref={hullGroupRef} position={[0, 0, params.beam / 4 - rakeExtension / 2]}>
         <HullMesh params={params} calculatedLength={calculatedLength} />
       </group>
 
@@ -234,8 +236,13 @@ export function Viewer3D({ params, calculatedLength, waterlineHeight }: Viewer3D
 
   // Check if boat fits on build plate (45° rotated plate with optimal positioning)
   // With boat shifted by beam/4 toward bow, the constraint is: length ≤ plateSize*√2 - beam/2
+  // For raked bow, the top of the bow tip extends forward by: hullHeight * tan(rakeAngle)
+  const rakeExtension = params.bowType === 'raked'
+    ? params.hullHeight * Math.tan(params.bowRakeAngle * Math.PI / 180)
+    : 0;
+  const effectiveLength = calculatedLength + rakeExtension;
   const maxFitLength = params.buildPlateSize * Math.SQRT2 - params.beam / 2;
-  const fitsOnPlate = calculatedLength <= maxFitLength;
+  const fitsOnPlate = effectiveLength <= maxFitLength;
 
   // Handle view preset toggle - if clicking same view, switch to opposite/next
   const handleViewPreset = (preset: ViewPreset) => {
@@ -352,6 +359,7 @@ export function Viewer3D({ params, calculatedLength, waterlineHeight }: Viewer3D
           viewMode={viewMode}
           viewPreset={viewPreset}
           fitsOnPlate={fitsOnPlate}
+          rakeExtension={rakeExtension}
         />
       </Canvas>
     </div>
