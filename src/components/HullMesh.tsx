@@ -205,8 +205,8 @@ function createHullGeometry(
     const next = (sec + 1) * POINTS_PER_SECTION;
 
     // Outer hull faces
-    // Bottom to first bilge point
-    addQuad(curr, next, IDX.bottomCenter, IDX.leftBilgeStart);
+    // Bottom to first bilge point (flip=true for correct downward-facing normal)
+    addQuad(curr, next, IDX.bottomCenter, IDX.leftBilgeStart, true);
 
     // Left bilge curve
     for (let i = 0; i < BILGE_SEGMENTS - 1; i++) {
@@ -226,8 +226,8 @@ function createHullGeometry(
       addQuad(curr, next, IDX.rightBilgeStart + i, IDX.rightBilgeStart + i + 1);
     }
 
-    // Right bilge end to bottom center close
-    addQuad(curr, next, IDX.rightBilgeEnd, IDX.bottomCenterClose);
+    // Right bilge end to bottom center close (flip=true for correct downward-facing normal)
+    addQuad(curr, next, IDX.rightBilgeEnd, IDX.bottomCenterClose, true);
 
     // Inner hull faces (reversed winding)
     const io = IDX.innerOffset;
@@ -262,6 +262,7 @@ function createHullGeometry(
     // Right rim
     indices.push(curr + IDX.topRight, next + io + IDX.topRight, curr + io + IDX.topRight);
     indices.push(curr + IDX.topRight, next + IDX.topRight, next + io + IDX.topRight);
+
   }
 
   // Bow tip closure
