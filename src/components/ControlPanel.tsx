@@ -1,5 +1,6 @@
 import type { BoatParams, BowType } from '../types/boatParams';
 import { calculateMaxLength, PENNY_WEIGHT } from '../types/boatParams';
+import type { ClipPlanesConfig, ClipPlaneState } from '../types/clipPlane';
 import styles from './ControlPanel.module.css';
 
 interface ControlPanelProps {
@@ -10,6 +11,8 @@ interface ControlPanelProps {
   onExportSTL: () => void;
   calculatedLength: number;
   waterlineHeight: number;
+  clipPlanes: ClipPlanesConfig;
+  onClipPlanesChange: (clipPlanes: ClipPlanesConfig) => void;
 }
 
 interface SliderRowProps {
@@ -62,9 +65,18 @@ export function ControlPanel({
   onExportSTL,
   calculatedLength,
   waterlineHeight,
+  clipPlanes,
+  onClipPlanesChange,
 }: ControlPanelProps) {
   const update = <K extends keyof BoatParams>(key: K, value: BoatParams[K]) => {
     onChange({ ...params, [key]: value });
+  };
+
+  const updateClipPlane = (axis: keyof ClipPlanesConfig, state: Partial<ClipPlaneState>) => {
+    onClipPlanesChange({
+      ...clipPlanes,
+      [axis]: { ...clipPlanes[axis], ...state },
+    });
   };
 
   const maxLength = calculateMaxLength(params.buildPlateSize, params.beam);
@@ -268,6 +280,91 @@ export function ControlPanel({
           <span>Waterline Height:</span>
           <span className={styles.infoValue}>{waterlineHeight.toFixed(1)} mm</span>
         </div>
+      </div>
+
+      {/* Cross-Section View */}
+      <div className={styles.section}>
+        <h2 className={styles.sectionTitle}>Cross-Section View</h2>
+
+        {/* X Axis (Beam) */}
+        <div className={styles.checkboxRow}>
+          <label>
+            <input
+              type="checkbox"
+              checked={clipPlanes.x.enabled}
+              onChange={(e) => updateClipPlane('x', { enabled: e.target.checked })}
+            />
+            X Axis (Beam)
+          </label>
+        </div>
+        {clipPlanes.x.enabled && (
+          <SliderRow
+            label="X Position"
+            value={clipPlanes.x.position}
+            min={-params.beam / 2}
+            max={params.beam / 2}
+            step={0.5}
+            onChange={(v) => updateClipPlane('x', { position: v })}
+          />
+        )}
+
+        {/* Y Axis (Height) */}
+        <div className={styles.checkboxRow}>
+          <label>
+            <input
+              type="checkbox"
+              checked={clipPlanes.y.enabled}
+              onChange={(e) => updateClipPlane('y', { enabled: e.target.checked })}
+            />
+            Y Axis (Height)
+          </label>
+        </div>
+        {clipPlanes.y.enabled && (
+          <SliderRow
+            label="Y Position"
+            value={clipPlanes.y.position}
+            min={0}
+            max={params.hullHeight}
+            step={0.5}
+            onChange={(v) => updateClipPlane('y', { position: v })}
+          />
+        )}
+
+        {/* Z Axis (Length) */}
+        <div className={styles.checkboxRow}>
+          <label>
+            <input
+              type="checkbox"
+              checked={clipPlanes.z.enabled}
+              onChange={(e) => updateClipPlane('z', { enabled: e.target.checked })}
+            />
+            Z Axis (Length)
+          </label>
+        </div>
+        {clipPlanes.z.enabled && (
+          <SliderRow
+            label="Z Position"
+            value={clipPlanes.z.position}
+            min={-calculatedLength * 0.6}
+            max={calculatedLength * 0.4}
+            step={1}
+            onChange={(v) => updateClipPlane('z', { position: v })}
+          />
+        )}
+
+        {/* Show solid caps option - only show when at least one plane is enabled */}
+        {(clipPlanes.x.enabled || clipPlanes.y.enabled || clipPlanes.z.enabled) && (
+          <div className={styles.checkboxRow} style={{ marginTop: '8px' }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={clipPlanes.showCaps}
+                onChange={(e) => onClipPlanesChange({ ...clipPlanes, showCaps: e.target.checked })}
+              />
+              Show Solid Caps
+            </label>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -29,7 +29,7 @@ Bow-wow is a 3D boat hull designer for creating 3D-printable boat hulls. It's a 
 - `src/utils/fileOperations.ts` - JSON save/load with version migration
 
 **Hull geometry structure:**
-The hull is generated as cross-sections along Z-axis (boat length). Each section has 8 outer points and 8 inner points forming a U-shape profile. Stern has constant cross-section, bow tapers to a point. Faces connect adjacent sections. The stern and bow tip require explicit closure faces.
+The hull is generated as cross-sections along Z-axis (boat length). Each section has BILGE_SEGMENTS*2+4 outer points and matching inner points forming a U-shape profile with curved bilge corners. Both stern and bow taper to a point with smooth curves. The stern curve uses `bilgeRadius * 2` for its length and smoothly narrows the beam. Faces connect adjacent sections, with tip closure triangles at both ends.
 
 **Coordinate system:**
 - X: beam (width, left/right)
@@ -43,6 +43,10 @@ The hull supports three bow types:
 - **Raked**: Bow leans forward as it goes up, controlled by `bowRakeAngle`
 - **Deep V**: Sharp V-shaped entry below waterline, controlled by `bowEntryAngle`
 
-## Known Issues / Potential Improvements
+## Stern Geometry
 
-1. **Stern z-fighting** - The hull geometry and stern cap are separate meshes that overlap slightly, causing visual flickering (z-fighting) at the stern, especially at the top corners. Currently mitigated with a 1mm offset, but a cleaner fix would be to either integrate the stern cap into the hull geometry with shared vertices, or use a CSG boolean union (e.g., `three-bvh-csg` library). Does not affect 3D printing since slicers handle overlapping geometry.
+The stern is a flat transom (no taper):
+- Straight cross-sections from stern to midship
+- Closed at the back with rim-style faces connecting outer to inner surfaces
+- The closure connects outer and inner profiles around the entire U-shaped cross-section
+- Wall thickness is naturally maintained since it's just the standard cross-section at the back

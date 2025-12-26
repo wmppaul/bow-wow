@@ -1,10 +1,57 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import type { BoatParams } from '../types/boatParams';
+import { computeXCrossSection, computeYCrossSection, computeZCrossSection } from '../utils/crossSection';
 
 interface HullMeshProps {
   params: BoatParams;
   calculatedLength: number;
+  clippingPlanes?: THREE.Plane[];
+  showCaps?: boolean;
+}
+
+// Component for rendering a computed cross-section cap
+function ComputedCrossSection({
+  params,
+  calculatedLength,
+  plane,
+}: {
+  params: BoatParams;
+  calculatedLength: number;
+  plane: THREE.Plane;
+}) {
+  // Determine which axis this plane cuts and compute geometry directly
+  const capGeometry = useMemo(() => {
+    const normal = plane.normal;
+    const position = plane.constant;
+
+    // Determine dominant axis from plane normal
+    const absX = Math.abs(normal.x);
+    const absY = Math.abs(normal.y);
+    const absZ = Math.abs(normal.z);
+
+    if (absY >= absX && absY >= absZ) {
+      // Y plane (horizontal cut)
+      return computeYCrossSection(params, position, calculatedLength);
+    } else if (absX >= absZ) {
+      // X plane (vertical cut through beam)
+      return computeXCrossSection(params, position, calculatedLength);
+    } else {
+      // Z plane (vertical cut along length)
+      return computeZCrossSection(params, position, calculatedLength);
+    }
+  }, [params, calculatedLength, plane]);
+
+  if (!capGeometry) return null;
+
+  return (
+    <mesh geometry={capGeometry}>
+      <meshStandardMaterial
+        color="#d06020"
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
 }
 
 // Number of segments for bilge curves (same as stern cap)
@@ -64,8 +111,10 @@ function createHullGeometry(
   const deepVSharpness = bowEntryAngle / 45; // Normalize to 0-1 range (45° is max)
 
   // Generate cross-section at a given z position with a scale factor
-  const addCrossSection = (z: number, scale: number, bowProgress: number = 0, isBowTip: boolean = false) => {
-    const halfBeam = (beam / 2) * scale;
+  // beamOverride allows specifying a different beam width (for stern curve)
+  const addCrossSection = (z: number, scale: number, bowProgress: number = 0, isBowTip: boolean = false, beamOverride?: number) => {
+    const effectiveBeam = beamOverride !== undefined ? beamOverride : beam;
+    const halfBeam = (effectiveBeam / 2) * scale;
 
     // For Deep V: reduce bilge radius toward bow to create sharper V entry
     let effectiveBilgeRadius = bilgeRadius;
@@ -164,13 +213,14 @@ function createHullGeometry(
   };
 
   // Generate all cross-sections from stern to bow tip
-  const sternSections = 2;
+  // Stern is FLAT - no taper, just a straight back with a transom closure
+  const sternSections = 3;  // Straight stern sections
   const bowSections = 20;
 
   // Center offset: shift geometry so hull center is at z=0
   const hullCenterZ = (bowLength - sternLength) / 2;
 
-  // Stern section (constant cross-section)
+  // Stern sections (constant cross-section, from -sternLength to 0)
   for (let i = 0; i <= sternSections; i++) {
     const t = i / sternSections;
     const z = -sternLength + t * sternLength - hullCenterZ;
@@ -186,7 +236,8 @@ function createHullGeometry(
     addCrossSection(z, scale, t, isBowTip);
   }
 
-  const numSections = sternSections + 1 + bowSections;
+  // Total sections: stern (sternSections + 1) + bow
+  const numSections = (sternSections + 1) + bowSections;
 
   // Helper to create faces between adjacent section points
   const addQuad = (curr: number, next: number, p1: number, p2: number, flip: boolean = false) => {
@@ -265,79 +316,160 @@ function createHullGeometry(
 
   }
 
-  // Stern end closure (close the entire rim at z = stern position)
-  // This connects outer to inner surfaces all around the U-shaped cross-section
+  // Stern closure - flat transom with wall thickness
+  // The stern wall has thickness in the Z direction:
+  // - Outer transom face at sternZ (section 0's outer points)
+  // - Inner transom face at sternZ + wallThickness (new offset vertices)
+  // - Rim connects outer to inner around the perimeter
+
   const sternSection = 0;
-  const sternIo = IDX.innerOffset;
+  const sternOuterBase = sternSection; // Outer points of section 0
+  const sternZ = -sternLength - hullCenterZ; // Z position of outer stern
+  const innerSternZ = sternZ + wallThickness; // Z position of inner stern
 
-  // Close left wall (from left bilge end up to top-left)
-  // Faces should point backward (toward -Z)
-  indices.push(
-    sternSection + IDX.leftBilgeEnd,
-    sternSection + sternIo + IDX.topLeft,
-    sternSection + IDX.topLeft
-  );
-  indices.push(
-    sternSection + IDX.leftBilgeEnd,
-    sternSection + sternIo + IDX.leftBilgeEnd,
-    sternSection + sternIo + IDX.topLeft
-  );
+  // Create new vertices for the inner stern face (offset forward by wallThickness)
+  const innerSternBase = vertices.length / 3; // Starting index for new inner stern vertices
 
-  // Close left bilge curve at stern
-  for (let i = 0; i < BILGE_SEGMENTS - 1; i++) {
-    const outerCurr = sternSection + IDX.leftBilgeStart + i;
-    const outerNext = sternSection + IDX.leftBilgeStart + i + 1;
-    const innerCurr = sternSection + sternIo + IDX.leftBilgeStart + i;
-    const innerNext = sternSection + sternIo + IDX.leftBilgeStart + i + 1;
-    indices.push(outerCurr, innerNext, outerNext);
-    indices.push(outerCurr, innerCurr, innerNext);
+  // Copy the inner profile from section 0, but offset Z by wallThickness
+  const halfBeam_stern = beam / 2;
+  const innerHalfBeam_stern = Math.max(0.1, halfBeam_stern - wallThickness);
+  const r_stern = Math.min(bilgeRadius, halfBeam_stern - 0.1, hullHeight - 0.1);
+  const effectiveR_stern = Math.max(0, r_stern);
+  const innerR_stern = Math.max(0, effectiveR_stern - wallThickness);
+  const innerBottom_stern = wallThickness;
+
+  // Inner bottom center
+  vertices.push(0, innerBottom_stern, innerSternZ);
+
+  // Inner left bilge curve
+  for (let i = 0; i < BILGE_SEGMENTS; i++) {
+    const angle = (Math.PI / 2) * (i / (BILGE_SEGMENTS - 1));
+    const x = -(innerHalfBeam_stern - innerR_stern) - Math.sin(angle) * innerR_stern;
+    const y = innerBottom_stern + innerR_stern - Math.cos(angle) * innerR_stern;
+    vertices.push(x, y, innerSternZ);
   }
 
-  // Close bottom left (from bottom center to left bilge start)
-  indices.push(
-    sternSection + IDX.bottomCenter,
-    sternSection + sternIo + IDX.leftBilgeStart,
-    sternSection + IDX.leftBilgeStart
-  );
-  indices.push(
-    sternSection + IDX.bottomCenter,
-    sternSection + sternIo + IDX.bottomCenter,
-    sternSection + sternIo + IDX.leftBilgeStart
-  );
+  // Inner top-left
+  vertices.push(-innerHalfBeam_stern, hullHeight, innerSternZ);
 
-  // Close bottom right (from right bilge end to bottom center close)
-  indices.push(
-    sternSection + IDX.rightBilgeEnd,
-    sternSection + sternIo + IDX.bottomCenterClose,
-    sternSection + IDX.bottomCenterClose
-  );
-  indices.push(
-    sternSection + IDX.rightBilgeEnd,
-    sternSection + sternIo + IDX.rightBilgeEnd,
-    sternSection + sternIo + IDX.bottomCenterClose
-  );
+  // Inner top-right
+  vertices.push(innerHalfBeam_stern, hullHeight, innerSternZ);
 
-  // Close right bilge curve at stern
+  // Inner right bilge curve
+  for (let i = 0; i < BILGE_SEGMENTS; i++) {
+    const angle = (Math.PI / 2) * (1 - i / (BILGE_SEGMENTS - 1));
+    const x = (innerHalfBeam_stern - innerR_stern) + Math.sin(angle) * innerR_stern;
+    const y = innerBottom_stern + innerR_stern - Math.cos(angle) * innerR_stern;
+    vertices.push(x, y, innerSternZ);
+  }
+
+  // Inner bottom center (closing point)
+  vertices.push(0, innerBottom_stern, innerSternZ);
+
+  // === OUTER TRANSOM FACE ===
+  // Triangulate the outer U-shape facing backward (-Z)
+  // Uses section 0's outer points
+  for (let i = IDX.leftBilgeStart; i < IDX.topLeft; i++) {
+    indices.push(sternOuterBase + IDX.bottomCenter, sternOuterBase + i, sternOuterBase + i + 1);
+  }
+  indices.push(sternOuterBase + IDX.bottomCenter, sternOuterBase + IDX.topLeft, sternOuterBase + IDX.topRight);
+  indices.push(sternOuterBase + IDX.bottomCenter, sternOuterBase + IDX.topRight, sternOuterBase + IDX.rightBilgeStart);
+  for (let i = IDX.rightBilgeStart; i < IDX.bottomCenterClose; i++) {
+    indices.push(sternOuterBase + IDX.bottomCenter, sternOuterBase + i, sternOuterBase + i + 1);
+  }
+
+  // === INNER TRANSOM FACE ===
+  // Triangulate the inner U-shape facing forward (+Z) - uses new offset vertices
+  for (let i = IDX.leftBilgeStart; i < IDX.topLeft; i++) {
+    indices.push(innerSternBase + IDX.bottomCenter, innerSternBase + i + 1, innerSternBase + i);
+  }
+  indices.push(innerSternBase + IDX.bottomCenter, innerSternBase + IDX.topRight, innerSternBase + IDX.topLeft);
+  indices.push(innerSternBase + IDX.bottomCenter, innerSternBase + IDX.rightBilgeStart, innerSternBase + IDX.topRight);
+  for (let i = IDX.rightBilgeStart; i < IDX.bottomCenterClose; i++) {
+    indices.push(innerSternBase + IDX.bottomCenter, innerSternBase + i + 1, innerSternBase + i);
+  }
+
+  // === STERN WALL RIM ===
+  // Connect outer stern (at sternZ) to inner stern (at sternZ + wallThickness)
+  // This creates the actual wall thickness visible from the side
+
+  // Left wall (8 -> 9)
+  indices.push(sternOuterBase + IDX.leftBilgeEnd, sternOuterBase + IDX.topLeft, innerSternBase + IDX.topLeft);
+  indices.push(sternOuterBase + IDX.leftBilgeEnd, innerSternBase + IDX.topLeft, innerSternBase + IDX.leftBilgeEnd);
+
+  // Left bilge curve
   for (let i = 0; i < BILGE_SEGMENTS - 1; i++) {
-    const outerCurr = sternSection + IDX.rightBilgeStart + i;
-    const outerNext = sternSection + IDX.rightBilgeStart + i + 1;
-    const innerCurr = sternSection + sternIo + IDX.rightBilgeStart + i;
-    const innerNext = sternSection + sternIo + IDX.rightBilgeStart + i + 1;
+    const outerCurr = sternOuterBase + IDX.leftBilgeStart + i;
+    const outerNext = sternOuterBase + IDX.leftBilgeStart + i + 1;
+    const innerCurr = innerSternBase + IDX.leftBilgeStart + i;
+    const innerNext = innerSternBase + IDX.leftBilgeStart + i + 1;
     indices.push(outerCurr, outerNext, innerNext);
     indices.push(outerCurr, innerNext, innerCurr);
   }
 
-  // Close right wall (from top-right down to right bilge start)
-  indices.push(
-    sternSection + IDX.topRight,
-    sternSection + sternIo + IDX.topRight,
-    sternSection + IDX.rightBilgeStart
-  );
-  indices.push(
-    sternSection + sternIo + IDX.topRight,
-    sternSection + sternIo + IDX.rightBilgeStart,
-    sternSection + IDX.rightBilgeStart
-  );
+  // Bottom left (0 -> 1)
+  indices.push(sternOuterBase + IDX.bottomCenter, sternOuterBase + IDX.leftBilgeStart, innerSternBase + IDX.leftBilgeStart);
+  indices.push(sternOuterBase + IDX.bottomCenter, innerSternBase + IDX.leftBilgeStart, innerSternBase + IDX.bottomCenter);
+
+  // Bottom right (18 -> 19)
+  indices.push(sternOuterBase + IDX.rightBilgeEnd, sternOuterBase + IDX.bottomCenterClose, innerSternBase + IDX.bottomCenterClose);
+  indices.push(sternOuterBase + IDX.rightBilgeEnd, innerSternBase + IDX.bottomCenterClose, innerSternBase + IDX.rightBilgeEnd);
+
+  // Right bilge curve
+  for (let i = 0; i < BILGE_SEGMENTS - 1; i++) {
+    const outerCurr = sternOuterBase + IDX.rightBilgeStart + i;
+    const outerNext = sternOuterBase + IDX.rightBilgeStart + i + 1;
+    const innerCurr = innerSternBase + IDX.rightBilgeStart + i;
+    const innerNext = innerSternBase + IDX.rightBilgeStart + i + 1;
+    indices.push(outerCurr, innerCurr, innerNext);
+    indices.push(outerCurr, innerNext, outerNext);
+  }
+
+  // Right wall (10 -> 11)
+  indices.push(sternOuterBase + IDX.topRight, innerSternBase + IDX.topRight, innerSternBase + IDX.rightBilgeStart);
+  indices.push(sternOuterBase + IDX.topRight, innerSternBase + IDX.rightBilgeStart, sternOuterBase + IDX.rightBilgeStart);
+
+  // === CONNECT INNER STERN TO INNER HULL ===
+  // Bridge from the offset inner stern vertices to section 0's inner points
+  // This closes the gap where the inner hull surface meets the stern wall
+  const section0Inner = sternSection + IDX.innerOffset;
+
+  // Connect each inner stern point to its corresponding section 0 inner point
+  // Left bilge
+  for (let i = 0; i < BILGE_SEGMENTS - 1; i++) {
+    const sternCurr = innerSternBase + IDX.leftBilgeStart + i;
+    const sternNext = innerSternBase + IDX.leftBilgeStart + i + 1;
+    const hullCurr = section0Inner + IDX.leftBilgeStart + i;
+    const hullNext = section0Inner + IDX.leftBilgeStart + i + 1;
+    indices.push(sternCurr, hullNext, sternNext);
+    indices.push(sternCurr, hullCurr, hullNext);
+  }
+
+  // Left wall
+  indices.push(innerSternBase + IDX.leftBilgeEnd, section0Inner + IDX.topLeft, innerSternBase + IDX.topLeft);
+  indices.push(innerSternBase + IDX.leftBilgeEnd, section0Inner + IDX.leftBilgeEnd, section0Inner + IDX.topLeft);
+
+  // Bottom left
+  indices.push(innerSternBase + IDX.bottomCenter, section0Inner + IDX.leftBilgeStart, innerSternBase + IDX.leftBilgeStart);
+  indices.push(innerSternBase + IDX.bottomCenter, section0Inner + IDX.bottomCenter, section0Inner + IDX.leftBilgeStart);
+
+  // Bottom right
+  indices.push(innerSternBase + IDX.rightBilgeEnd, section0Inner + IDX.bottomCenterClose, innerSternBase + IDX.bottomCenterClose);
+  indices.push(innerSternBase + IDX.rightBilgeEnd, section0Inner + IDX.rightBilgeEnd, section0Inner + IDX.bottomCenterClose);
+
+  // Right bilge
+  for (let i = 0; i < BILGE_SEGMENTS - 1; i++) {
+    const sternCurr = innerSternBase + IDX.rightBilgeStart + i;
+    const sternNext = innerSternBase + IDX.rightBilgeStart + i + 1;
+    const hullCurr = section0Inner + IDX.rightBilgeStart + i;
+    const hullNext = section0Inner + IDX.rightBilgeStart + i + 1;
+    indices.push(sternCurr, sternNext, hullNext);
+    indices.push(sternCurr, hullNext, hullCurr);
+  }
+
+  // Right wall
+  indices.push(innerSternBase + IDX.topRight, innerSternBase + IDX.rightBilgeStart, section0Inner + IDX.rightBilgeStart);
+  indices.push(innerSternBase + IDX.topRight, section0Inner + IDX.rightBilgeStart, section0Inner + IDX.topRight);
 
   // Bow tip closure
   const lastFullSection = (numSections - 2) * POINTS_PER_SECTION;
@@ -390,87 +522,9 @@ function createHullGeometry(
 }
 
 /**
- * Create stern transom - a solid wall that seals the entire back of the boat
- * Has wall thickness to match the hull
- */
-function createSternCapGeometry(params: BoatParams, sternLength: number, bowLength: number): THREE.BufferGeometry {
-  const { beam, hullHeight, bilgeRadius, wallThickness } = params;
-
-  // Center offset to match hull centering
-  const hullCenterZ = (bowLength - sternLength) / 2;
-
-  // Calculate dimensions
-  const halfBeam = beam / 2;
-  const r = Math.min(bilgeRadius, halfBeam - 0.1, hullHeight - 0.1);
-  const effectiveR = Math.max(0, r);
-
-  // Create the U-shaped profile using THREE.Shape
-  const shape = new THREE.Shape();
-
-  // Start at bottom center
-  shape.moveTo(0, 0);
-
-  // Left side - bottom to bilge curve
-  shape.lineTo(-(halfBeam - effectiveR), 0);
-
-  // Left bilge curve (quarter circle from bottom to side)
-  if (effectiveR > 0) {
-    for (let i = 1; i <= BILGE_SEGMENTS; i++) {
-      const angle = (Math.PI / 2) * (i / BILGE_SEGMENTS);
-      const x = -(halfBeam - effectiveR) - Math.sin(angle) * effectiveR;
-      const y = effectiveR - Math.cos(angle) * effectiveR;
-      shape.lineTo(x, y);
-    }
-  } else {
-    shape.lineTo(-halfBeam, 0);
-  }
-
-  // Left wall up to top
-  shape.lineTo(-halfBeam, hullHeight);
-
-  // Top - left to right
-  shape.lineTo(halfBeam, hullHeight);
-
-  // Right wall down to bilge
-  if (effectiveR > 0) {
-    shape.lineTo(halfBeam, effectiveR);
-  }
-
-  // Right bilge curve (quarter circle from side to bottom)
-  if (effectiveR > 0) {
-    for (let i = 1; i <= BILGE_SEGMENTS; i++) {
-      const angle = (Math.PI / 2) * (i / BILGE_SEGMENTS);
-      const x = (halfBeam - effectiveR) + Math.cos(angle) * effectiveR;
-      const y = effectiveR - Math.sin(angle) * effectiveR;
-      shape.lineTo(x, y);
-    }
-  } else {
-    shape.lineTo(halfBeam, 0);
-  }
-
-  // Close back to center
-  shape.lineTo(0, 0);
-
-  // Extrude the shape to give it wall thickness
-  const extrudeSettings = {
-    depth: wallThickness,
-    bevelEnabled: false,
-  };
-
-  const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-
-  // Position: the extrusion goes in +Z direction from the XY plane
-  // We want the back face at the centered stern position
-  // Offset backward to avoid z-fighting with hull rim closure faces
-  geometry.translate(0, 0, -sternLength - hullCenterZ - 1.0);
-
-  return geometry;
-}
-
-/**
  * Create motor mount geometry
  */
-function createMotorMountGeometry(params: BoatParams): THREE.BufferGeometry {
+function createMotorMountGeometry(params: BoatParams, sternLength: number, bowLength: number): THREE.BufferGeometry {
   const {
     motorMountDiameter,
     motorMountOffset,
@@ -481,6 +535,13 @@ function createMotorMountGeometry(params: BoatParams): THREE.BufferGeometry {
 
   const cylinderRadius = motorMountDiameter / 2;
 
+  // Calculate stern position (same centering as hull geometry)
+  const hullCenterZ = (bowLength - sternLength) / 2;
+  const sternZ = -sternLength - hullCenterZ;
+
+  // Motor mount center Z position: from the back of stern, forward by motorMountFromStern
+  const mountCenterZ = sternZ + motorMountFromStern;
+
   // Cylinder - aligned along Z axis (boat length)
   const cylinder = new THREE.CylinderGeometry(
     cylinderRadius,
@@ -490,11 +551,11 @@ function createMotorMountGeometry(params: BoatParams): THREE.BufferGeometry {
   );
   // CylinderGeometry is vertical (along Y), rotate to align with Z (boat length)
   cylinder.rotateX(Math.PI / 2);
-  // Position: below hull (Y negative), at stern area (Z negative)
+  // Position: below hull (Y negative), at calculated position
   cylinder.translate(
     0,
     -motorMountOffset - cylinderRadius,
-    -motorMountFromStern + motorMountLength / 2
+    mountCenterZ
   );
 
   // Neck connecting to hull
@@ -507,7 +568,7 @@ function createMotorMountGeometry(params: BoatParams): THREE.BufferGeometry {
   neck.translate(
     0,
     -neckHeight / 2,
-    -motorMountFromStern + motorMountLength / 2
+    mountCenterZ
   );
 
   // Merge them
@@ -547,42 +608,54 @@ function createMotorMountGeometry(params: BoatParams): THREE.BufferGeometry {
   return merged;
 }
 
-export function HullMesh({ params, calculatedLength }: HullMeshProps) {
-  const { hullGeometry, sternCapGeometry, motorMountGeometry } = useMemo(() => {
+export function HullMesh({ params, calculatedLength, clippingPlanes, showCaps = true }: HullMeshProps) {
+  const { hullGeometry, motorMountGeometry } = useMemo(() => {
     const bowLength = calculatedLength * (params.bowLengthPercent / 100);
     const sternLength = calculatedLength - bowLength;
 
     return {
       hullGeometry: createHullGeometry(params, sternLength, bowLength),
-      sternCapGeometry: createSternCapGeometry(params, sternLength, bowLength),
-      motorMountGeometry: createMotorMountGeometry(params),
+      motorMountGeometry: createMotorMountGeometry(params, sternLength, bowLength),
     };
   }, [params, calculatedLength]);
 
+  // Use empty array when no clipping to properly clear previous planes
+  const activePlanes = clippingPlanes && clippingPlanes.length > 0 ? clippingPlanes : [];
+  const hasClipping = activePlanes.length > 0;
+
   return (
     <group>
-      {/* Complete hull (stern + bow as one piece) */}
+      {/* Complete hull (stern curve + straight stern + bow as one piece) */}
       <mesh geometry={hullGeometry} castShadow receiveShadow>
         <meshStandardMaterial
+          key={`hull-mat-${hasClipping}`}
           color="#e07030"
           side={THREE.DoubleSide}
           flatShading={false}
-        />
-      </mesh>
-
-      {/* Stern transom */}
-      <mesh geometry={sternCapGeometry} castShadow receiveShadow>
-        <meshStandardMaterial
-          color="#e07030"
-          side={THREE.DoubleSide}
-          flatShading={false}
+          clippingPlanes={activePlanes}
+          clipShadows={hasClipping}
         />
       </mesh>
 
       {/* Motor mount */}
       <mesh geometry={motorMountGeometry} castShadow>
-        <meshStandardMaterial color="#505050" />
+        <meshStandardMaterial
+          key={`motor-mat-${hasClipping}`}
+          color="#505050"
+          clippingPlanes={activePlanes}
+          clipShadows={hasClipping}
+        />
       </mesh>
+
+      {/* Computed cross-section caps */}
+      {showCaps && activePlanes.map((plane, index) => (
+        <ComputedCrossSection
+          key={`cross-section-${index}`}
+          params={params}
+          calculatedLength={calculatedLength}
+          plane={plane}
+        />
+      ))}
     </group>
   );
 }

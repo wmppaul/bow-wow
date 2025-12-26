@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Grid, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import type { BoatParams } from '../types/boatParams';
+import type { ClipPlanesConfig } from '../types/clipPlane';
 import { HullMesh } from './HullMesh';
 import { BuildPlate } from './BuildPlate';
 import { WaterlinePlane } from './WaterlinePlane';
+import { ClipPlaneVisual } from './ClipPlaneVisual';
 import { exportToSTL } from '../utils/stlExport';
 import styles from './Viewer3D.module.css';
 
@@ -13,6 +15,8 @@ interface Viewer3DProps {
   params: BoatParams;
   calculatedLength: number;
   waterlineHeight: number;
+  clipPlanes: ClipPlanesConfig;
+  onClipPlanesChange: (clipPlanes: ClipPlanesConfig) => void;
 }
 
 type ViewMode = 'perspective' | 'orthographic';
@@ -135,17 +139,46 @@ function CameraController({ viewPreset, target, viewMode }: CameraControllerProp
   );
 }
 
+interface SceneProps extends Viewer3DProps {
+  viewMode: ViewMode;
+  viewPreset: ViewPreset;
+  fitsOnPlate: boolean;
+  rakeExtension: number;
+}
+
 function Scene({
   params,
   calculatedLength,
   waterlineHeight,
+  clipPlanes,
+  onClipPlanesChange,
   viewMode,
   viewPreset,
   fitsOnPlate,
   rakeExtension,
-}: Viewer3DProps & { viewMode: ViewMode; viewPreset: ViewPreset; fitsOnPlate: boolean; rakeExtension: number }) {
+}: SceneProps) {
   const hullGroupRef = useRef<THREE.Group>(null);
   const target: [number, number, number] = [0, params.hullHeight / 2, 0];
+
+  // Create THREE.Plane objects for clipping
+  const threeClipPlanes = useMemo(() => {
+    const planes: THREE.Plane[] = [];
+
+    if (clipPlanes.x.enabled) {
+      // X plane: normal points in -X direction (clips everything with x > position)
+      planes.push(new THREE.Plane(new THREE.Vector3(-1, 0, 0), clipPlanes.x.position));
+    }
+    if (clipPlanes.y.enabled) {
+      // Y plane: normal points in -Y direction (clips everything with y > position)
+      planes.push(new THREE.Plane(new THREE.Vector3(0, -1, 0), clipPlanes.y.position));
+    }
+    if (clipPlanes.z.enabled) {
+      // Z plane: normal points in -Z direction (clips everything with z > position)
+      planes.push(new THREE.Plane(new THREE.Vector3(0, 0, -1), clipPlanes.z.position));
+    }
+
+    return planes;
+  }, [clipPlanes]);
 
   // Listen for STL export event
   useEffect(() => {
@@ -159,6 +192,14 @@ function Scene({
     window.addEventListener('exportSTL', handleExport);
     return () => window.removeEventListener('exportSTL', handleExport);
   }, []);
+
+  // Helper to update clip plane position
+  const updateClipPosition = (axis: 'x' | 'y' | 'z', position: number) => {
+    onClipPlanesChange({
+      ...clipPlanes,
+      [axis]: { ...clipPlanes[axis], position },
+    });
+  };
 
   return (
     <>
@@ -200,7 +241,12 @@ function Scene({
       {/* Wide stern needs to be closer to plate center, narrow bow can extend to plate tip */}
       {/* For raked bow, reduce shift to account for rake extension */}
       <group ref={hullGroupRef} position={[0, 0, params.beam / 4 - rakeExtension / 2]}>
-        <HullMesh params={params} calculatedLength={calculatedLength} />
+        <HullMesh
+          params={params}
+          calculatedLength={calculatedLength}
+          clippingPlanes={threeClipPlanes}
+          showCaps={clipPlanes.showCaps}
+        />
       </group>
 
       <WaterlinePlane
@@ -208,6 +254,32 @@ function Scene({
         length={calculatedLength}
         beam={params.beam}
       />
+
+      {/* Clip plane visuals */}
+      {clipPlanes.x.enabled && (
+        <ClipPlaneVisual
+          axis="x"
+          position={clipPlanes.x.position}
+          size={Math.max(params.hullHeight, calculatedLength) * 1.5}
+          onPositionChange={(pos) => updateClipPosition('x', pos)}
+        />
+      )}
+      {clipPlanes.y.enabled && (
+        <ClipPlaneVisual
+          axis="y"
+          position={clipPlanes.y.position}
+          size={Math.max(params.beam, calculatedLength) * 1.5}
+          onPositionChange={(pos) => updateClipPosition('y', pos)}
+        />
+      )}
+      {clipPlanes.z.enabled && (
+        <ClipPlaneVisual
+          axis="z"
+          position={clipPlanes.z.position}
+          size={Math.max(params.beam, params.hullHeight) * 1.5}
+          onPositionChange={(pos) => updateClipPosition('z', pos)}
+        />
+      )}
     </>
   );
 }
@@ -230,7 +302,7 @@ const viewTogglePairs: Record<ViewPreset, ViewPreset> = {
 const isHomePreset = (preset: ViewPreset) =>
   preset === 'home' || preset === 'home2' || preset === 'home3' || preset === 'home4';
 
-export function Viewer3D({ params, calculatedLength, waterlineHeight }: Viewer3DProps) {
+export function Viewer3D({ params, calculatedLength, waterlineHeight, clipPlanes, onClipPlanesChange }: Viewer3DProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('perspective');
   const [viewPreset, setViewPreset] = useState<ViewPreset>('home');
 
@@ -351,11 +423,13 @@ export function Viewer3D({ params, calculatedLength, waterlineHeight }: Viewer3D
         </div>
       </div>
 
-      <Canvas shadows>
+      <Canvas shadows gl={{ localClippingEnabled: true, stencil: true }}>
         <Scene
           params={params}
           calculatedLength={calculatedLength}
           waterlineHeight={waterlineHeight}
+          clipPlanes={clipPlanes}
+          onClipPlanesChange={onClipPlanesChange}
           viewMode={viewMode}
           viewPreset={viewPreset}
           fitsOnPlate={fitsOnPlate}

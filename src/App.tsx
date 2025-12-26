@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import type { BoatParams } from './types/boatParams';
 import { DEFAULT_PARAMS } from './types/boatParams';
+import type { ClipPlanesConfig } from './types/clipPlane';
+import { DEFAULT_CLIP_PLANES } from './types/clipPlane';
 import { ControlPanel } from './components/ControlPanel';
 import { Viewer3D } from './components/Viewer3D';
 import { calculateWaterlineHeight } from './utils/physics';
@@ -9,6 +11,7 @@ import './App.css';
 
 function App() {
   const [params, setParams] = useState<BoatParams>(DEFAULT_PARAMS);
+  const [clipPlanes, setClipPlanes] = useState<ClipPlanesConfig>(DEFAULT_CLIP_PLANES);
 
   // Calculate derived values
   const calculatedLength = params.boatLength;
@@ -49,11 +52,15 @@ function App() {
         onExportSTL={handleExportSTL}
         calculatedLength={calculatedLength}
         waterlineHeight={waterlineHeight}
+        clipPlanes={clipPlanes}
+        onClipPlanesChange={setClipPlanes}
       />
       <Viewer3D
         params={params}
         calculatedLength={calculatedLength}
         waterlineHeight={waterlineHeight}
+        clipPlanes={clipPlanes}
+        onClipPlanesChange={setClipPlanes}
       />
     </div>
   );
