@@ -108,6 +108,7 @@
 .checkboxRow {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: 8px;
 }
 
@@ -124,4 +125,18 @@
   width: 16px;
   height: 16px;
   cursor: pointer;
+}
+
+.viewBtn {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.viewBtn:hover {
+  background: #5a9aff;
 }

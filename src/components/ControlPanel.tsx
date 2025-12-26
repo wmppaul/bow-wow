@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import type { BoatParams, BowType } from '../types/boatParams';
 import { calculateMaxLength, PENNY_WEIGHT } from '../types/boatParams';
 import type { ClipPlanesConfig, ClipPlaneState } from '../types/clipPlane';
+import { CrossSectionPopup } from './CrossSectionPopup';
 import styles from './ControlPanel.module.css';
 
 interface ControlPanelProps {
@@ -68,6 +70,7 @@ export function ControlPanel({
   clipPlanes,
   onClipPlanesChange,
 }: ControlPanelProps) {
+  const [popupAxis, setPopupAxis] = useState<'x' | 'y' | 'z' | null>(null);
   const update = <K extends keyof BoatParams>(key: K, value: BoatParams[K]) => {
     onChange({ ...params, [key]: value });
   };
@@ -296,6 +299,9 @@ export function ControlPanel({
             />
             X Axis (Beam)
           </label>
+          {clipPlanes.x.enabled && (
+            <button className={styles.viewBtn} onClick={() => setPopupAxis('x')}>View</button>
+          )}
         </div>
         {clipPlanes.x.enabled && (
           <SliderRow
@@ -318,6 +324,9 @@ export function ControlPanel({
             />
             Y Axis (Height)
           </label>
+          {clipPlanes.y.enabled && (
+            <button className={styles.viewBtn} onClick={() => setPopupAxis('y')}>View</button>
+          )}
         </div>
         {clipPlanes.y.enabled && (
           <SliderRow
@@ -340,6 +349,9 @@ export function ControlPanel({
             />
             Z Axis (Length)
           </label>
+          {clipPlanes.z.enabled && (
+            <button className={styles.viewBtn} onClick={() => setPopupAxis('z')}>View</button>
+          )}
         </div>
         {clipPlanes.z.enabled && (
           <SliderRow
@@ -366,6 +378,17 @@ export function ControlPanel({
           </div>
         )}
       </div>
+
+      {/* Cross-section popup */}
+      {popupAxis && (
+        <CrossSectionPopup
+          axis={popupAxis}
+          position={clipPlanes[popupAxis].position}
+          params={params}
+          calculatedLength={calculatedLength}
+          onClose={() => setPopupAxis(null)}
+        />
+      )}
     </div>
   );
 }
