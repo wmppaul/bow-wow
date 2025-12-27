@@ -471,46 +471,77 @@ function createHullGeometry(
   indices.push(innerSternBase + IDX.topRight, innerSternBase + IDX.rightBilgeStart, section0Inner + IDX.rightBilgeStart);
   indices.push(innerSternBase + IDX.topRight, section0Inner + IDX.rightBilgeStart, section0Inner + IDX.topRight);
 
-  // Bow tip closure
+  // Bow tip closure - add closing ring to smoothly bridge to single tip
   const lastFullSection = (numSections - 2) * POINTS_PER_SECTION;
   const tipSection = (numSections - 1) * POINTS_PER_SECTION;
-
-  // Close outer surface at bow - triangles converging to tip point
-  for (let i = IDX.bottomCenter; i < IDX.bottomCenterClose; i++) {
-    indices.push(lastFullSection + i, lastFullSection + i + 1, tipSection + 0);
-  }
-
-  // Close inner surface at bow (reversed winding)
   const io = IDX.innerOffset;
-  for (let i = IDX.bottomCenter; i < IDX.bottomCenterClose; i++) {
-    indices.push(lastFullSection + io + i, tipSection + io, lastFullSection + io + i + 1);
+
+  // Add a closing ring that merges outer and inner surfaces smoothly
+  const ringBase = vertices.length / 3;
+  const outerTipZ = vertices[tipSection * 3 + 2];
+  const innerTipZ = vertices[(tipSection + io) * 3 + 2];
+  const avgTipZ = (outerTipZ + innerTipZ) / 2;
+  const tipRadius = Math.max(0.6, wallThickness * 0.7);
+
+  // Create ring vertices that close the top gap
+  // Go around the U-shape perimeter, gradually closing the top opening
+  for (let i = IDX.bottomCenter; i <= IDX.bottomCenterClose; i++) {
+    // Get position from last full section
+    const outerIdx = lastFullSection + i;
+    const innerIdx = lastFullSection + io + i;
+
+    const outerX = vertices[outerIdx * 3];
+    const outerY = vertices[outerIdx * 3 + 1];
+    const outerZ = vertices[outerIdx * 3 + 2];
+    const innerX = vertices[innerIdx * 3];
+    const innerY = vertices[innerIdx * 3 + 1];
+    const innerZ = vertices[innerIdx * 3 + 2];
+
+    // For top points (topLeft and topRight), bring them together
+    let finalX, finalY, finalZ;
+    if (i === IDX.topLeft || i === IDX.topRight) {
+      // Close the gap - move toward centerline
+      finalX = 0;
+      finalY = (outerY + innerY) / 2;
+      finalZ = avgTipZ + tipRadius * 0.5;
+    } else {
+      // For rest of perimeter, average outer and inner
+      finalX = (outerX + innerX) / 2;
+      finalY = (outerY + innerY) / 2;
+      finalZ = avgTipZ + tipRadius * 0.3;
+    }
+
+    vertices.push(finalX, finalY, finalZ);
   }
 
-  // Close wall thickness at bow tip
-  // Connect each outer point to its inner counterpart via the tip
-  for (let i = IDX.bottomCenter; i <= IDX.bottomCenterClose; i++) {
-    const nextI = (i === IDX.bottomCenterClose) ? IDX.bottomCenter : i + 1;
+  // Connect last full section to ring
+  for (let i = IDX.bottomCenter; i < IDX.bottomCenterClose; i++) {
+    const ringIdx = ringBase + (i - IDX.bottomCenter);
+    const ringNextIdx = ringBase + (i + 1 - IDX.bottomCenter);
 
-    // Skip the top gap (between topLeft and topRight)
-    if (i === IDX.topLeft) {
-      // Connect outer topLeft to inner topLeft via tips
-      indices.push(lastFullSection + IDX.topLeft, lastFullSection + io + IDX.topLeft, tipSection + io);
-      indices.push(lastFullSection + IDX.topLeft, tipSection + io, tipSection + 0);
-      continue;
-    }
-    if (i === IDX.topRight) {
-      // Connect outer topRight to inner topRight via tips
-      indices.push(lastFullSection + IDX.topRight, tipSection + 0, tipSection + io);
-      indices.push(lastFullSection + IDX.topRight, tipSection + io, lastFullSection + io + IDX.topRight);
-      // Also create wall from topRight to rightBilgeStart (don't skip it!)
-      indices.push(lastFullSection + IDX.rightBilgeStart, lastFullSection + IDX.topRight, lastFullSection + io + IDX.topRight);
-      indices.push(lastFullSection + IDX.rightBilgeStart, lastFullSection + io + IDX.topRight, lastFullSection + io + IDX.rightBilgeStart);
-      continue;
-    }
+    // Outer surface to ring
+    indices.push(lastFullSection + i, lastFullSection + i + 1, ringNextIdx);
+    indices.push(lastFullSection + i, ringNextIdx, ringIdx);
 
-    // Regular wall closure between adjacent points
-    indices.push(lastFullSection + nextI, lastFullSection + i, lastFullSection + io + i);
-    indices.push(lastFullSection + nextI, lastFullSection + io + i, lastFullSection + io + nextI);
+    // Inner surface to ring (reversed winding)
+    indices.push(lastFullSection + io + i, ringNextIdx, lastFullSection + io + i + 1);
+    indices.push(lastFullSection + io + i, ringIdx, ringNextIdx);
+
+    // Wall thickness between outer and inner (skip the top gap area)
+    if (i !== IDX.topLeft && i !== IDX.topRight - 1) {
+      indices.push(lastFullSection + i, lastFullSection + io + i, ringIdx);
+      indices.push(lastFullSection + i + 1, ringIdx, ringNextIdx);
+    }
+  }
+
+  // Close ring to final tip point
+  const finalTipIdx = vertices.length / 3;
+  vertices.push(0, wallThickness / 2, avgTipZ + tipRadius);
+
+  for (let i = 0; i < IDX.bottomCenterClose - IDX.bottomCenter; i++) {
+    const ringIdx = ringBase + i;
+    const ringNextIdx = ringBase + i + 1;
+    indices.push(ringIdx, ringNextIdx, finalTipIdx);
   }
 
   const geometry = new THREE.BufferGeometry();
